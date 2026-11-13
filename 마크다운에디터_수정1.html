@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>경량 마크다운 에디터</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, "Malgun Gothic", sans-serif; }
+  .toolbar {
+    display: flex; gap: 6px; flex-wrap: wrap;
+    padding: 10px; background: #f5f5f5; border-bottom: 1px solid #ddd;
+  }
+  .toolbar button {
+    padding: 6px 12px; border: 1px solid #ccc; background: #fff;
+    border-radius: 4px; cursor: pointer; font-size: 14px;
+  }
+  .toolbar button:hover { background: #eee; }
+  .container { display: flex; height: calc(100vh - 53px); }
+  .editor-area, .preview-area { width: 50%; padding: 12px; overflow-y: auto; }
+  .editor-area { display: flex; flex-direction: column; border-right: 1px solid #ddd; }
+  .editor-head { display: flex; justify-content: flex-end; margin-bottom: 8px; }
+  .new-doc-btn {
+    padding: 4px 10px; font-size: 13px; border: 1px solid #ccc;
+    background: #fff; border-radius: 4px; cursor: pointer; color: #555;
+  }
+  .new-doc-btn:hover { background: #f0f0f0; }
+  #editor {
+    flex: 1; width: 100%; border: 1px solid #ddd; border-radius: 4px;
+    padding: 10px; font-size: 14px; font-family: monospace; resize: none;
+    outline: none;
+  }
+  .preview-area { background: #fafafa; }
+  #preview { line-height: 1.6; }
+  #preview h1 { border-bottom: 2px solid #eee; padding-bottom: 6px; }
+  #preview h2 { border-bottom: 1px solid #eee; padding-bottom: 4px; }
+  #preview code {
+    background: #eee; padding: 2px 5px; border-radius: 3px; font-family: monospace;
+  }
+  #preview pre {
+    background: #2d2d2d; color: #f8f8f2; padding: 12px;
+    border-radius: 6px; overflow-x: auto;
+  }
+  #preview pre code { background: none; color: inherit; padding: 0; }
+  #preview blockquote {
+    border-left: 4px solid #ddd; margin: 0; padding-left: 12px; color: #666;
+  }
+</style>
+</head>
+<body>
+  <div class="toolbar">
+    <button data-md="bold">굵게</button>
+    <button data-md="italic">기울임</button>
+    <button data-md="h1">제목1</button>
+    <button data-md="h2">제목2</button>
+    <button data-md="link">링크</button>
+    <button data-md="code">코드</button>
+    <button data-md="list">목록</button>
+    <button id="loadBtn">불러오기</button>
+    <button id="copyBtn">복사</button>
+    <button id="saveBtn">HTML 저장</button>
+  </div>
+
+  <div class="container">
+    <div class="editor-area">
+      <div class="editor-head">
+        <button id="newDocBtn" class="new-doc-btn">＋ 새 문서</button>
+      </div>
+      <textarea id="editor" placeholder="여기에 마크다운을 입력하세요."></textarea>
+    </div>
+    <div class="preview-area">
+      <div id="preview"></div>
+    </div>
+  </div>
+
+<script>
+  const STORAGE_KEY = "markdown_editor_content";
+  const editor = document.getElementById("editor");
+  const preview = document.getElementById("preview");
+
+  // ---------- 마크다운 파싱 ----------
+  function parseMarkdown(text) {
+    let html = text;
+
+    // 코드 블록 (``` ```)
+    html = html.replace(/```([\s\S]*?)```/g, (m, code) =>
+      "<pre><code>" + escapeHtml(code.trim()) + "</code></pre>");
+
+    // 제목
+    html = html.replace(/^## (.*)$/gm, "<h2>$1</h2>");
+    html = html.replace(/^# (.*)$/gm, "<h1>$1</h1>");
+
+    // 인용문
+    html = html.replace(/^> (.*)$/gm, "<blockquote>$1</blockquote>");
+
+    // 목록
+    html = html.replace(/^- (.*)$/gm, "<li>$1</li>");
+    html = html.replace(/(<li>[\s\S]*?<\/li>)/g, "<ul>$1</ul>");
+
+    // 굵게, 기울임
+    html = html.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+    html = html.replace(/\*(.*?)\*/g, "<em>$1</em>");
+
+    // 인라인 코드
+    html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+
+    // 링크
+    html = html.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank">$1</a>');
+
+    // 줄바꿈
+    html = html.replace(/\n/g, "<br>");
+
+    return html;
+  }
+
+  function escapeHtml(str) {
+    return str.replace(/&/g, "&amp;")
+              .replace(/</g, "&lt;")
+              .replace(/>/g, "&gt;");
+  }
+
+  function renderMarkdown() {
+    preview.innerHTML = parseMarkdown(editor.value);
+  }
+
+  // ---------- 자동 저장 ----------
+  editor.addEventListener("input", () => {
+    renderMarkdown();
+    localStorage.setItem(STORAGE_KEY, editor.value);
+  });
+
+  // ---------- 서식 버튼 ----------
+  document.querySelectorAll(".toolbar button[data-md]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const type = btn.dataset.md;
+      const start = editor.selectionStart;
+      const end = editor.selectionEnd;
+      const sel = editor.value.substring(start, end);
+      let insert = sel;
+
+      switch (type) {
+        case "bold":   insert = "**" + (sel || "굵은 텍스트") + "**"; break;
+        case "italic": insert = "*" + (sel || "기울임") + "*"; break;
+        case "h1":     insert = "# " + (sel || "제목1"); break;
+        case "h2":     insert = "## " + (sel || "제목2"); break;
+        case "link":   insert = "[" + (sel || "링크 텍스트") + "](https://)"; break;
+        case "code":   insert = "`" + (sel || "코드") + "`"; break;
+        case "list":   insert = "- " + (sel || "목록 항목"); break;
+      }
+
+      editor.value = editor.value.substring(0, start) + insert + editor.value.substring(end);
+      renderMarkdown();
+      localStorage.setItem(STORAGE_KEY, editor.value);
+      editor.focus();
+    });
+  });
+
+  // ---------- 불러오기 ----------
+  document.getElementById("loadBtn").addEventListener("click", () => {
+    const saved = localStorage.getItem(STORAGE_KEY) || "";
+    if (editor.value.trim() !== "" &&
+        !confirm("작성 중인 내용이 저장된 내용으로 대체됩니다. 계속하시겠습니까?")) {
+      return;
+    }
+    editor.value = saved;
+    renderMarkdown();
+    editor.focus();
+  });
+
+  // ---------- 복사 ----------
+  document.getElementById("copyBtn").addEventListener("click", () => {
+    navigator.clipboard.writeText(editor.value)
+      .then(() => alert("마크다운이 클립보드에 복사되었습니다."))
+      .catch(() => alert("복사에 실패했습니다."));
+  });
+
+  // ---------- HTML 저장 ----------
+  document.getElementById("saveBtn").addEventListener("click", () => {
+    const content = preview.innerHTML;
+    const blob = new Blob(
+      ["<!DOCTYPE html><html><head><meta charset='UTF-8'></head><body>" +
+       content + "</body></html>"],
+      { type: "text/html" }
+    );
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "document.html";
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  // ---------- 새 문서 (초기화) ----------
+  document.getElementById("newDocBtn").addEventListener("click", () => {
+    if (editor.value.trim() === "") return;   // 비어 있으면 확인창 생략
+    if (!confirm("작성 중인 내용이 모두 삭제됩니다. 계속하시겠습니까?")) return;
+    editor.value = "";                        // 완전히 빈 화면
+    localStorage.setItem(STORAGE_KEY, "");    // 저장 내용도 비움
+    renderMarkdown();
+    editor.focus();
+  });
+
+  // ---------- 초기 로드 ----------
+  window.addEventListener("DOMContentLoaded", () => {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) editor.value = saved;
+    renderMarkdown();
+  });
+</script>
+</body>
+</html>
